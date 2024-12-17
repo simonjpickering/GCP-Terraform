@@ -90,3 +90,38 @@ After Terraform creates the GKE cluster, you can configure your kubectl context 
 gcloud container clusters get-credentials my-gke-cluster --zone us-central1-a --project <YOUR-GCP-PROJECT>
 
 Now you can interact with your GKE cluster using kubectl
+
+
+**Compute instance with credentials from Hashicorp Vault**
+
+Store GCP Credentials in Vault
+
+Store the GCP service account credentials in HashiCorp Vault using the vault write command:
+
+vault write secret/gcp-credentials \
+  credentials=@/path/to/your/gcp-service-account-key.json
+
+
+**Explanation of the Configuration**
+
+Vault Provider:
+
+The vault provider is configured to communicate with HashiCorp Vault. Replace the Vault address if needed (http://127.0.0.1:8200 is the default local address).
+
+GCP Provider:
+
+The google provider is configured to authenticate using credentials retrieved dynamically from Vault.
+data.vault_generic_secret.gcp_credentials.data["credentials"] pulls the GCP service account credentials from Vault.
+Fetching Credentials from Vault:
+
+The data "vault_generic_secret" block reads the credentials stored in Vault at secret/gcp-credentials. These credentials are used by Terraform to authenticate to GCP.
+GCP Resources:
+
+VPC Network:
+A custom VPC (my-vpc-network) is created without automatically created subnets.
+Subnetwork: A subnet is created in us-central1 with a CIDR block of 10.0.0.0/24.
+Compute Instance: A Linux-based virtual machine (my-linux-vm) is created with the e2-medium machine type and the Debian OS image.
+Firewall Rule: A firewall rule allows inbound SSH traffic to the VM from any IP address (for access).
+Metadata and SSH:
+
+SSH keys are passed via the metadata block to enable SSH access to the instance.
