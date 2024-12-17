@@ -1,0 +1,62 @@
+# Set up provider for GCP
+provider "google" {
+  credentials = file("<YOUR-CREDENTIALS-FILE>.json")
+  project     = "<YOUR-GCP-PROJECT>"
+  region      = "us-central1" # You can change the region as per your preference
+}
+
+# Create a Virtual Network (VPC)
+resource "google_compute_network" "vpc_network" {
+  name                    = "my-vpc-network"
+  auto_create_subnetworks = false
+}
+
+# Create a Subnetwork within the VPC
+resource "google_compute_subnetwork" "subnet" {
+  name          = "my-subnet"
+  region        = "us-central1"
+  network       = google_compute_network.vpc_network.self_link
+  ip_cidr_range = "10.0.0.0/24"
+}
+
+# Create a Linux VM instance
+resource "google_compute_instance" "linux_vm" {
+  name         = "my-linux-vm"
+  machine_type = "e2-medium" # Choose the machine type as per your need
+  zone         = "us-central1-a" # Choose your zone
+
+  # Define the network interface
+  network_interface {
+    network = google_compute_network.vpc_network.self_link
+    subnetwork = google_compute_subnetwork.subnet.self_link
+    access_config {
+      # This will give the VM a public IP
+    }
+  }
+
+  # Specify the image and operating system for the instance
+  boot_disk {
+    initialize_params {
+      image = "debian-11-bullseye-v20231115" # You can choose a different OS image
+    }
+  }
+
+  # Set up firewall to allow SSH (port 22) to the VM
+  metadata = {
+    ssh-keys = "your-username:${file("~/.ssh/id_rsa.pub")}"
+  }
+}
+
+# Allow SSH traffic to the VM
+resource "google_compute_firewall" "allow_ssh" {
+  name    = "allow-ssh"
+  network = google_compute_network.vpc_network.name
+
+  allow {
+    protocol = "tcp"
+    ports    = ["22"]
+  }
+
+  source_ranges = ["0.0.0.0/0"] # Allow SSH from anywhere
+}
+
