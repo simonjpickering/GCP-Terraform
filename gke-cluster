@@ -1,0 +1,116 @@
+# Provider configuration
+provider "google" {
+  credentials = file("<YOUR-CREDENTIALS-FILE>.json")  # Path to your GCP credentials file
+  project     = "<YOUR-GCP-PROJECT>"                  # GCP project ID
+  region      = "us-central1"                          # Region for the GKE cluster
+}
+
+# Enable necessary APIs
+resource "google_project_service" "gke" {
+  service = "container.googleapis.com"
+}
+
+resource "google_project_service" "compute" {
+  service = "compute.googleapis.com"
+}
+
+# Create a VPC network
+resource "google_compute_network" "vpc_network" {
+  name                    = "gke-vpc-network"
+  auto_create_subnetworks = false
+}
+
+# Create a subnet for the GKE cluster
+resource "google_compute_subnetwork" "subnet" {
+  name          = "gke-subnet"
+  region        = "us-central1"
+  network       = google_compute_network.vpc_network.self_link
+  ip_cidr_range = "10.0.0.0/24"
+}
+
+# Create a GKE cluster
+resource "google_container_cluster" "primary" {
+  name               = "my-gke-cluster"
+  location           = "us-central1-a"  # You can change the zone here
+  initial_node_count = 3  # Number of nodes in the cluster
+  
+  # Define the master configuration
+  master_auth {
+    username = "admin"
+    password = "adminpassword"
+  }
+
+  # Define the node pool configuration
+  node_config {
+    machine_type = "e2-medium"  # Machine type for each node
+    oauth_scopes = [
+      "https://www.googleapis.com/auth/cloud-platform", 
+      "https://www.googleapis.com/auth/userinfo.email"
+    ]
+    image_type = "COS"  # Google Container-Optimized OS
+    disk_size_gb = 100  # Size of the disk in GB for each node
+    preemptible  = false  # Set to true if you want to use preemptible VMs
+  }
+
+  # Set up the network and subnetwork for the GKE cluster
+  network    = google_compute_network.vpc_network.name
+  subnetwork = google_compute_subnetwork.subnet.name
+
+  # Enable IP Alias for Pods and Services
+  ip_allocation_policy {
+    use_ip_aliases = true
+    cluster_secondary_range_name  = "pods"
+    services_secondary_range_name = "services"
+  }
+
+  # Enable autoupgrade and autoscaling for the node pool
+  node_pool {
+    name               = "default-node-pool"
+    initial_node_count = 3
+
+    management {
+      auto_upgrade = true
+      auto_repair  = true
+    }
+
+    # Machine configuration for nodes in the pool
+    node_config {
+      machine_type = "e2-medium"
+    }
+  }
+
+  # Enable private cluster if needed
+  private_cluster_config {
+    enable_private_nodes = true
+    enable_private_endpoint = false
+  }
+
+  # Enable GKE monitoring and logging
+  enable_stackdriver_kubernetes = true
+  enable_network_policy = true
+}
+
+# Create firewall rule to allow communication to GKE cluster
+resource "google_compute_firewall" "allow_gke" {
+  name    = "allow-gke-cluster"
+  network = google_compute_network.vpc_network.name
+
+  allow {
+    protocol = "tcp"
+    ports    = ["443"]  # HTTPS port for communication with GKE
+  }
+
+  source_ranges = ["0.0.0.0/0"]
+}
+
+# IAM roles for GKE
+resource "google_project_iam_member" "gke_service_account" {
+  role   = "roles/container.admin"
+  member = "serviceAccount:${google_service_account.gke_sa.email}"
+}
+
+resource "google_service_account" "gke_sa" {
+  account_id   = "gke-service-account"
+  display_name = "GKE Service Account"
+}
+
